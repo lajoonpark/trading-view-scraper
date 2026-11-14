@@ -10,7 +10,7 @@ describe('input-schema', () => {
         expect(parsed.includeHistoricalBars).toBe(true);
         expect(parsed.includePerBarIndicators).toBe(true);
         expect(parsed.includeScannerSnapshot).toBe(true);
-        expect(parsed.maxConcurrency).toBe(15);
+        expect(parsed.maxConcurrency).toBe(5);
     });
 
     it('rejects empty symbols list', () => {

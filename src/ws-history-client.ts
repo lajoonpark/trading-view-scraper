@@ -323,7 +323,7 @@ function sortBars(map: Map<number, OhlcvBar>): OhlcvBar[] {
 }
 
 export async function fetchHistoricalBars(options: FetchHistoricalBarsOptions): Promise<OhlcvBar[]> {
-    const maxRetries = options.maxRetries ?? 2;
+    const maxRetries = options.maxRetries ?? 3;
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -334,7 +334,10 @@ export async function fetchHistoricalBars(options: FetchHistoricalBarsOptions): 
             if (!isRetryableWsError(lastError) || attempt === maxRetries) {
                 throw lastError;
             }
-            const delayMs = 500 * 2 ** attempt;
+            const isRateLimited = lastError.message.includes('HTTP 429');
+            const baseDelay = isRateLimited ? 2000 : 500;
+            const jitterMs = Math.floor(Math.random() * 500);
+            const delayMs = baseDelay * 2 ** attempt + jitterMs;
             await new Promise((r) => setTimeout(r, delayMs));
         }
     }

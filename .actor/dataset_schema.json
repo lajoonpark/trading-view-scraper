@@ -1,0 +1,37 @@
+{
+    "actorSpecification": 1,
+    "views": {
+        "overview": {
+            "title": "Stock & Technical Indicator Overview",
+            "transformation": {
+                "fields": [
+                    "ticker",
+                    "description",
+                    "exchange",
+                    "interval",
+                    "barsCount",
+                    "latestBar.close",
+                    "latestBar.indicators.rsi",
+                    "latestBar.indicators.macd.macd",
+                    "scannerSnapshot.recommendations.overallSignal",
+                    "error"
+                ]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "ticker": { "label": "Ticker", "format": "text" },
+                    "description": { "label": "Name", "format": "text" },
+                    "exchange": { "label": "Exchange", "format": "text" },
+                    "interval": { "label": "Interval", "format": "text" },
+                    "barsCount": { "label": "Bars", "format": "number" },
+                    "latestBar.close": { "label": "Latest Close", "format": "number" },
+                    "latestBar.indicators.rsi": { "label": "RSI", "format": "number" },
+                    "latestBar.indicators.macd.macd": { "label": "MACD", "format": "number" },
+                    "scannerSnapshot.recommendations.overallSignal": { "label": "TV Signal", "format": "text" },
+                    "error": { "label": "Error", "format": "text" }
+                }
+            }
+        }
+    }
+}

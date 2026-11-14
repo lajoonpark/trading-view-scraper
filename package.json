@@ -1,0 +1,32 @@
+{
+  "name": "trading-view-scraper",
+  "version": "1.0.0",
+  "description": "Apify Actor for scraping targeted TradingView stocks, historical OHLCV price bars across configurable intervals, and technical indicators (MACD, RSI, EMA, SMA, Bollinger Bands, Stochastic, ADX, ATR, etc.).",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "dev": "tsx src/main.ts",
+    "test": "vitest run tests/unit",
+    "test:e2e": "vitest run tests/e2e",
+    "test:all": "vitest run",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "apify": "^3.2.6",
+    "https-proxy-agent": "^7.0.6",
+    "ws": "^8.18.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

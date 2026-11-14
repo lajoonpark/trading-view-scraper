@@ -1,0 +1,225 @@
+{
+    "title": "TradingView Stock & Indicator Scraper Input",
+    "description": "Configure specific stock symbols, historical OHLCV interval, bar count/date range, and technical indicators to scrape from TradingView.",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "symbols": {
+            "title": "Stock / Ticker Symbols",
+            "type": "array",
+            "description": "Targeted list of specific stocks or tickers to scrape (e.g. \"NASDAQ:AAPL\", \"NYSE:TSLA\", \"NVDA\", \"BINANCE:BTCUSDT\"). Passing EXCHANGE:SYMBOL avoids ambiguity.",
+            "editor": "stringList",
+            "prefill": [
+                "NASDAQ:AAPL",
+                "NASDAQ:NVDA"
+            ],
+            "minItems": 1,
+            "maxItems": 200
+        },
+        "interval": {
+            "title": "Timeframe Interval",
+            "type": "string",
+            "description": "Candlestick bar interval for historical OHLCV data, per-bar indicators, and TradingView Scanner snapshot.",
+            "editor": "select",
+            "default": "1d",
+            "prefill": "4h",
+            "enum": [
+                "1m",
+                "3m",
+                "5m",
+                "15m",
+                "30m",
+                "45m",
+                "1h",
+                "2h",
+                "3h",
+                "4h",
+                "1d",
+                "1w",
+                "1M"
+            ],
+            "enumTitles": [
+                "1 minute (1m)",
+                "3 minutes (3m)",
+                "5 minutes (5m)",
+                "15 minutes (15m)",
+                "30 minutes (30m)",
+                "45 minutes (45m)",
+                "1 hour (1h)",
+                "2 hours (2h)",
+                "3 hours (3h)",
+                "4 hours (4h)",
+                "1 day (1d)",
+                "1 week (1w)",
+                "1 month (1M)"
+            ]
+        },
+        "barsCount": {
+            "title": "Historical Bars Count",
+            "type": "integer",
+            "description": "Number of historical OHLCV bars to return per symbol (oldest to newest). Warmup bars are fetched automatically before this window so indicators like EMA200/RSI/MACD are accurate from bar #1.",
+            "default": 100,
+            "prefill": 100,
+            "minimum": 1,
+            "maximum": 5000
+        },
+        "fromDate": {
+            "title": "From Date (Optional ISO 8601)",
+            "type": "string",
+            "description": "Optional start date filter (e.g. \"2026-01-01\" or \"2026-01-01T00:00:00Z\").",
+            "editor": "textfield"
+        },
+        "toDate": {
+            "title": "To Date (Optional ISO 8601)",
+            "type": "string",
+            "description": "Optional end date filter (e.g. \"2026-11-14\").",
+            "editor": "textfield"
+        },
+        "indicators": {
+            "title": "Per-Bar Technical Indicators",
+            "type": "array",
+            "description": "Technical indicators to compute and attach to every historical OHLCV bar. Allowed values: RSI, MACD, EMA, SMA, BB, STOCH, ATR, ADX, VWAP, OBV, CCI, ROC.",
+            "editor": "stringList",
+            "default": [
+                "RSI",
+                "MACD",
+                "EMA",
+                "SMA",
+                "BB"
+            ],
+            "prefill": [
+                "RSI",
+                "MACD",
+                "EMA",
+                "SMA",
+                "BB"
+            ]
+        },
+        "indicatorParams": {
+            "title": "Indicator Parameters",
+            "type": "object",
+            "description": "Customize periods and multipliers for per-bar indicators (RSI, MACD, EMA/SMA periods, Bollinger Bands, Stochastic, ATR, ADX, CCI, ROC).",
+            "editor": "json",
+            "default": {
+                "rsiPeriod": 14,
+                "macdFast": 12,
+                "macdSlow": 26,
+                "macdSignal": 9,
+                "emaPeriods": [20, 50, 200],
+                "smaPeriods": [20, 50, 200],
+                "bbPeriod": 20,
+                "bbStdDev": 2,
+                "stochK": 14,
+                "stochSmoothK": 3,
+                "stochD": 3,
+                "atrPeriod": 14,
+                "adxPeriod": 14,
+                "cciPeriod": 20,
+                "rocPeriod": 9
+            }
+        },
+        "includeHistoricalBars": {
+            "title": "Include Historical OHLCV Bars",
+            "type": "boolean",
+            "description": "Fetch historical OHLCV bars via TradingView Chart WebSocket.",
+            "default": true
+        },
+        "includePerBarIndicators": {
+            "title": "Attach Indicators to Each Historical Bar",
+            "type": "boolean",
+            "description": "Compute and attach the selected technical indicators onto each historical bar.",
+            "default": true
+        },
+        "includeScannerSnapshot": {
+            "title": "Include TradingView Scanner TA Snapshot",
+            "type": "boolean",
+            "description": "Fetch TradingView's live Scanner technical analysis snapshot (recommendations, RSI, MACD, Moving Averages, fundamentals) for the chosen interval.",
+            "default": true
+        },
+        "searchType": {
+            "title": "Symbol Resolution Asset Type",
+            "type": "string",
+            "description": "Used when bare tickers (without EXCHANGE:) are passed in symbols.",
+            "editor": "select",
+            "default": "stock",
+            "enum": [
+                "stock",
+                "etf",
+                "crypto",
+                "forex",
+                "index",
+                "futures",
+                "all"
+            ]
+        },
+        "preferredExchanges": {
+            "title": "Preferred Exchanges",
+            "type": "array",
+            "description": "Exchange priority order when resolving bare tickers like \"AAPL\" without an exchange prefix.",
+            "editor": "stringList",
+            "default": [
+                "NASDAQ",
+                "NYSE",
+                "AMEX",
+                "ARCA",
+                "BATS",
+                "TSX",
+                "LSE",
+                "BINANCE",
+                "COINBASE",
+                "FX"
+            ]
+        },
+        "session": {
+            "title": "Trading Session",
+            "type": "string",
+            "description": "Regular market hours or extended (pre-market + after-hours) session for historical bars.",
+            "editor": "select",
+            "default": "regular",
+            "enum": [
+                "regular",
+                "extended"
+            ]
+        },
+        "adjustment": {
+            "title": "Price Adjustment",
+            "type": "string",
+            "description": "Adjust historical prices for splits or dividends.",
+            "editor": "select",
+            "default": "splits",
+            "enum": [
+                "splits",
+                "dividends"
+            ]
+        },
+        "maxConcurrency": {
+            "title": "Max Concurrency",
+            "type": "integer",
+            "description": "Maximum number of symbols scraped concurrently.",
+            "default": 5,
+            "minimum": 1,
+            "maximum": 15
+        },
+        "requestTimeoutMs": {
+            "title": "Request Timeout (ms)",
+            "type": "integer",
+            "description": "Timeout per request/WebSocket session in milliseconds.",
+            "default": 25000,
+            "minimum": 3000,
+            "maximum": 120000
+        },
+        "proxyConfiguration": {
+            "title": "Proxy Configuration",
+            "type": "object",
+            "description": "Optional Apify Proxy or custom proxy configuration.",
+            "editor": "proxy",
+            "sectionCaption": "Proxy & Network",
+            "prefill": {
+                "useApifyProxy": false
+            }
+        }
+    },
+    "required": [
+        "symbols"
+    ]
+}

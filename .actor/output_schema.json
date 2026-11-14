@@ -1,0 +1,16 @@
+{
+    "actorOutputSchemaVersion": 1,
+    "title": "TradingView Scraper Output",
+    "properties": {
+        "results": {
+            "type": "string",
+            "title": "Scraped Stock Results (Dataset)",
+            "template": "{{links.apiDefaultDatasetUrl}}/items"
+        },
+        "summary": {
+            "type": "string",
+            "title": "Run Summary (Key-Value Store)",
+            "template": "{{links.apiDefaultKeyValueStoreUrl}}/records/OUTPUT"
+        }
+    }
+}

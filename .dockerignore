@@ -1,0 +1,10 @@
+node_modules
+dist
+storage
+apify_storage
+tests
+.git
+.gitignore
+*.log
+.DS_Store
+coverage

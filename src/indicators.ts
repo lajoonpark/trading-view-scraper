@@ -4,11 +4,14 @@ import type {
     OhlcvBar,
     PerBarIndicators,
     SmcBreakTag,
+    SmcEqualLevel,
     SmcPerBarIndicator,
     SmcStructureEvent,
     SmcStructureSnapshot,
+    SmcSweepEvent,
     SmcTrend,
     SmcZone,
+    SmcZoneBox,
 } from './types.js';
 
 function roundValue(value: number | null, decimals = 6): number | null {
@@ -359,9 +362,63 @@ export function computeRoc(closes: number[], period: number): (number | null)[] 
 }
 
 interface SmcPivot {
+    idx: number;
     level: number;
     datetime: string;
     crossed: boolean;
+}
+
+function roundSmcBox(box: SmcZoneBox): SmcZoneBox {
+    return {
+        top: roundValue(box.top, 6) ?? box.top,
+        bottom: roundValue(box.bottom, 6) ?? box.bottom,
+        datetime: box.datetime,
+    };
+}
+
+function pickNearestZoneBox(
+    boxes: SmcZoneBox[],
+    close: number,
+    side: 'bullish' | 'bearish',
+): SmcZoneBox | null {
+    let best: SmcZoneBox | null = null;
+    for (const box of boxes) {
+        if (side === 'bullish') {
+            if (box.bottom <= close && (!best || box.top > best.top)) {
+                best = box;
+            }
+        } else if (box.top >= close && (!best || box.bottom < best.bottom)) {
+            best = box;
+        }
+    }
+    return best ? roundSmcBox(best) : null;
+}
+
+function findOrderBlockCandle(
+    bars: OhlcvBar[],
+    startIdx: number,
+    endIdx: number,
+    direction: 'bullish' | 'bearish',
+): SmcZoneBox | null {
+    const lo = Math.max(0, startIdx);
+    const hi = Math.min(bars.length - 1, endIdx);
+    if (lo > hi) return null;
+
+    let bestIdx = lo;
+    for (let k = lo + 1; k <= hi; k++) {
+        if (direction === 'bullish') {
+            if (bars[k].low < bars[bestIdx].low) bestIdx = k;
+        } else if (bars[k].high > bars[bestIdx].high) {
+            bestIdx = k;
+        }
+    }
+
+    const chosen = bars[bestIdx];
+    return {
+        top: chosen.high,
+        bottom: chosen.low,
+        datetime: chosen.datetime,
+    };
 }
 
 function classifySmcZone(close: number, low: number, high: number): SmcZone {
@@ -375,9 +432,14 @@ function classifySmcZone(close: number, low: number, high: number): SmcZone {
 
 /**
  * Compute LuxAlgo-style Smart Money Concepts structure (leg pivots, BOS/CHoCH,
- * Strong/Weak High & Low trailing extremes, and Premium/Discount zones) for a given lookback size.
+ * Strong/Weak High & Low trailing extremes, Order Blocks, EQH/EQL, Liquidity Sweeps,
+ * and Premium/Discount zones) for a given lookback size.
  */
-export function computeSmcStructure(bars: OhlcvBar[], size: number): SmcStructureSnapshot[] {
+export function computeSmcStructure(
+    bars: OhlcvBar[],
+    size: number,
+    atrSeries?: (number | null)[],
+): SmcStructureSnapshot[] {
     const out: SmcStructureSnapshot[] = new Array(bars.length);
     if (bars.length === 0) return out;
 
@@ -385,12 +447,86 @@ export function computeSmcStructure(bars: OhlcvBar[], size: number): SmcStructur
     let trendNum: -1 | 0 | 1 = 0;
     let lastHigh: SmcPivot | null = null;
     let lastLow: SmcPivot | null = null;
+    let prevHigh: SmcPivot | null = null;
+    let prevLow: SmcPivot | null = null;
+    let activeEqh: SmcEqualLevel | null = null;
+    let activeEql: SmcEqualLevel | null = null;
     let lastBreak: SmcStructureEvent | null = null;
+    let lastSweep: SmcSweepEvent | null = null;
+    let bullishObs: SmcZoneBox[] = [];
+    let bearishObs: SmcZoneBox[] = [];
     let trailingTop = bars[0].high;
     let trailingBottom = bars[0].low;
 
     for (let i = 0; i < bars.length; i++) {
         const bar = bars[i];
+        const barAtr = atrSeries?.[i] ?? null;
+        const eqTolerance = barAtr !== null && barAtr > 0 ? barAtr * 0.15 : bar.close * 0.002;
+
+        // Mitigate active Order Blocks and Equal Highs/Lows before checking new breaks/sweeps
+        bullishObs = bullishObs.filter((ob) => bar.low >= ob.bottom);
+        bearishObs = bearishObs.filter((ob) => bar.high <= ob.top);
+
+        let barSweep: SmcSweepEvent | null = null;
+
+        // Check Bullish Liquidity Sweep (wick below EQL / Weak Low / lastLow, closes back above)
+        if (activeEql && bar.low < activeEql.level) {
+            if (bar.close > activeEql.level) {
+                barSweep = {
+                    direction: 'bullish',
+                    kind: 'EQL',
+                    level: roundValue(activeEql.level, 6) ?? activeEql.level,
+                    sweepDatetime: bar.datetime,
+                };
+            }
+            activeEql = null;
+        } else if (trendNum === -1 && i > 0 && bar.low < trailingBottom && bar.close > trailingBottom) {
+            barSweep = {
+                direction: 'bullish',
+                kind: 'low',
+                level: roundValue(trailingBottom, 6) ?? trailingBottom,
+                sweepDatetime: bar.datetime,
+            };
+        } else if (lastLow && !lastLow.crossed && bar.low < lastLow.level && bar.close > lastLow.level) {
+            barSweep = {
+                direction: 'bullish',
+                kind: 'low',
+                level: roundValue(lastLow.level, 6) ?? lastLow.level,
+                sweepDatetime: bar.datetime,
+            };
+        }
+
+        // Check Bearish Liquidity Sweep (wick above EQH / Weak High / lastHigh, closes back below)
+        if (activeEqh && bar.high > activeEqh.level) {
+            if (!barSweep && bar.close < activeEqh.level) {
+                barSweep = {
+                    direction: 'bearish',
+                    kind: 'EQH',
+                    level: roundValue(activeEqh.level, 6) ?? activeEqh.level,
+                    sweepDatetime: bar.datetime,
+                };
+            }
+            activeEqh = null;
+        } else if (!barSweep && trendNum === 1 && i > 0 && bar.high > trailingTop && bar.close < trailingTop) {
+            barSweep = {
+                direction: 'bearish',
+                kind: 'high',
+                level: roundValue(trailingTop, 6) ?? trailingTop,
+                sweepDatetime: bar.datetime,
+            };
+        } else if (!barSweep && lastHigh && !lastHigh.crossed && bar.high > lastHigh.level && bar.close < lastHigh.level) {
+            barSweep = {
+                direction: 'bearish',
+                kind: 'high',
+                level: roundValue(lastHigh.level, 6) ?? lastHigh.level,
+                sweepDatetime: bar.datetime,
+            };
+        }
+
+        if (barSweep) {
+            lastSweep = barSweep;
+        }
+
         if (bar.high > trailingTop) trailingTop = bar.high;
         if (bar.low < trailingBottom) trailingBottom = bar.low;
 
@@ -414,7 +550,15 @@ export function computeSmcStructure(bars: OhlcvBar[], size: number): SmcStructur
             if (newLeg !== leg) {
                 leg = newLeg;
                 if (leg === 1) {
-                    lastLow = { level: cand.low, datetime: cand.datetime, crossed: false };
+                    prevLow = lastLow;
+                    lastLow = { idx: candIdx, level: cand.low, datetime: cand.datetime, crossed: false };
+                    if (prevLow && Math.abs(lastLow.level - prevLow.level) <= eqTolerance) {
+                        activeEql = {
+                            kind: 'EQL',
+                            level: roundValue(Math.min(lastLow.level, prevLow.level), 6) ?? lastLow.level,
+                            datetime: cand.datetime,
+                        };
+                    }
                     trailingBottom = cand.low;
                     let localTop = cand.high;
                     for (let j = candIdx + 1; j <= i; j++) {
@@ -423,7 +567,15 @@ export function computeSmcStructure(bars: OhlcvBar[], size: number): SmcStructur
                     }
                     trailingTop = localTop;
                 } else {
-                    lastHigh = { level: cand.high, datetime: cand.datetime, crossed: false };
+                    prevHigh = lastHigh;
+                    lastHigh = { idx: candIdx, level: cand.high, datetime: cand.datetime, crossed: false };
+                    if (prevHigh && Math.abs(lastHigh.level - prevHigh.level) <= eqTolerance) {
+                        activeEqh = {
+                            kind: 'EQH',
+                            level: roundValue(Math.max(lastHigh.level, prevHigh.level), 6) ?? lastHigh.level,
+                            datetime: cand.datetime,
+                        };
+                    }
                     trailingTop = cand.high;
                     let localBot = cand.low;
                     for (let j = candIdx + 1; j <= i; j++) {
@@ -450,6 +602,11 @@ export function computeSmcStructure(bars: OhlcvBar[], size: number): SmcStructur
                 pivotDatetime: lastHigh.datetime,
                 breakDatetime: bar.datetime,
             };
+            const ob = findOrderBlockCandle(bars, lastHigh.idx, i - 1, 'bullish');
+            if (ob && bar.low >= ob.bottom) {
+                bullishObs.push(ob);
+                if (bullishObs.length > 20) bullishObs.shift();
+            }
         }
 
         if (lastLow && !lastLow.crossed && bar.close < lastLow.level) {
@@ -465,6 +622,11 @@ export function computeSmcStructure(bars: OhlcvBar[], size: number): SmcStructur
                 pivotDatetime: lastLow.datetime,
                 breakDatetime: bar.datetime,
             };
+            const ob = findOrderBlockCandle(bars, lastLow.idx, i - 1, 'bearish');
+            if (ob && bar.high <= ob.top) {
+                bearishObs.push(ob);
+                if (bearishObs.length > 20) bearishObs.shift();
+            }
         }
 
         const trend: SmcTrend = trendNum === 1 ? 'bullish' : trendNum === -1 ? 'bearish' : 'neutral';
@@ -484,6 +646,12 @@ export function computeSmcStructure(bars: OhlcvBar[], size: number): SmcStructur
             trailingLow: roundedLow,
             equilibrium,
             zone: classifySmcZone(bar.close, trailingBottom, trailingTop),
+            bullishOb: pickNearestZoneBox(bullishObs, bar.close, 'bullish'),
+            bearishOb: pickNearestZoneBox(bearishObs, bar.close, 'bearish'),
+            eqh: activeEqh,
+            eql: activeEql,
+            liquiditySweep: barSweep,
+            lastSweep,
         };
     }
 
@@ -491,18 +659,63 @@ export function computeSmcStructure(bars: OhlcvBar[], size: number): SmcStructur
 }
 
 /**
- * Compute dual-horizon LuxAlgo SMC indicators (`swing` and `internal`) per bar.
+ * Compute nearest active unmitigated Bullish and Bearish Fair Value Gaps (FVG) per bar.
+ */
+export function computeFairValueGaps(
+    bars: OhlcvBar[],
+    atrSeries?: (number | null)[],
+): { bullishFvg: (SmcZoneBox | null)[]; bearishFvg: (SmcZoneBox | null)[] } {
+    const bullishOut: (SmcZoneBox | null)[] = new Array(bars.length).fill(null);
+    const bearishOut: (SmcZoneBox | null)[] = new Array(bars.length).fill(null);
+    let activeBullish: SmcZoneBox[] = [];
+    let activeBearish: SmcZoneBox[] = [];
+
+    for (let i = 0; i < bars.length; i++) {
+        const bar = bars[i];
+        activeBullish = activeBullish.filter((fvg) => bar.low > fvg.bottom);
+        activeBearish = activeBearish.filter((fvg) => bar.high < fvg.top);
+
+        if (i >= 2) {
+            const left = bars[i - 2];
+            const mid = bars[i - 1];
+            const barAtr = atrSeries?.[i] ?? null;
+            const minGap = barAtr !== null && barAtr > 0 ? barAtr * 0.1 : 0;
+
+            if (bar.low > left.high && mid.close > left.high && bar.low - left.high >= minGap) {
+                activeBullish.push({ top: bar.low, bottom: left.high, datetime: mid.datetime });
+                if (activeBullish.length > 20) activeBullish.shift();
+            }
+            if (bar.high < left.low && mid.close < left.low && left.low - bar.high >= minGap) {
+                activeBearish.push({ top: left.low, bottom: bar.high, datetime: mid.datetime });
+                if (activeBearish.length > 20) activeBearish.shift();
+            }
+        }
+
+        bullishOut[i] = pickNearestZoneBox(activeBullish, bar.close, 'bullish');
+        bearishOut[i] = pickNearestZoneBox(activeBearish, bar.close, 'bearish');
+    }
+
+    return { bullishFvg: bullishOut, bearishFvg: bearishOut };
+}
+
+/**
+ * Compute dual-horizon LuxAlgo SMC indicators (`swing` and `internal`) plus FVG zones per bar.
  */
 export function computeSmc(
     bars: OhlcvBar[],
     swingLength: number,
     internalLength: number,
+    atrSeries?: (number | null)[],
 ): SmcPerBarIndicator[] {
-    const swing = computeSmcStructure(bars, swingLength);
-    const internal = computeSmcStructure(bars, internalLength);
+    const resolvedAtr = atrSeries ?? computeAtr(bars, 14);
+    const swing = computeSmcStructure(bars, swingLength, resolvedAtr);
+    const internal = computeSmcStructure(bars, internalLength, resolvedAtr);
+    const { bullishFvg, bearishFvg } = computeFairValueGaps(bars, resolvedAtr);
     return bars.map((_, i) => ({
         swing: swing[i],
         internal: internal[i],
+        bullishFvg: bullishFvg[i],
+        bearishFvg: bearishFvg[i],
     }));
 }
 
@@ -531,14 +744,14 @@ export function calculatePerBarIndicators(
     const stoch = enabled.has('STOCH')
         ? computeStochastic(bars, params.stochK, params.stochSmoothK, params.stochD)
         : null;
-    const atr = enabled.has('ATR') ? computeAtr(bars, params.atrPeriod) : null;
+    const atr = enabled.has('ATR') || enabled.has('SMC') ? computeAtr(bars, params.atrPeriod) : null;
     const adx = enabled.has('ADX') ? computeAdx(bars, params.adxPeriod) : null;
     const vwap = enabled.has('VWAP') ? computeVwap(bars, isIntraday) : null;
     const obv = enabled.has('OBV') ? computeObv(bars) : null;
     const cci = enabled.has('CCI') ? computeCci(bars, params.cciPeriod) : null;
     const roc = enabled.has('ROC') ? computeRoc(closes, params.rocPeriod) : null;
     const smc = enabled.has('SMC')
-        ? computeSmc(bars, params.smcSwingLength, params.smcInternalLength)
+        ? computeSmc(bars, params.smcSwingLength, params.smcInternalLength, atr ?? undefined)
         : null;
 
     return bars.map((_, i) => {
@@ -574,7 +787,7 @@ export function calculatePerBarIndicators(
                 d: roundValue(stoch.d[i], 4),
             };
         }
-        if (atr) entry.atr = roundValue(atr[i], 6);
+        if (atr && enabled.has('ATR')) entry.atr = roundValue(atr[i], 6);
         if (adx) {
             entry.adx = {
                 adx: roundValue(adx.adx[i], 4),

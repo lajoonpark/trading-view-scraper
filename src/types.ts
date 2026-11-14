@@ -129,6 +129,25 @@ export interface SmcStructureEvent {
     breakDatetime: string;
 }
 
+export interface SmcZoneBox {
+    top: number;
+    bottom: number;
+    datetime: string;
+}
+
+export interface SmcEqualLevel {
+    kind: 'EQH' | 'EQL';
+    level: number;
+    datetime: string;
+}
+
+export interface SmcSweepEvent {
+    direction: 'bullish' | 'bearish';
+    kind: 'low' | 'high' | 'EQL' | 'EQH';
+    level: number;
+    sweepDatetime: string;
+}
+
 export interface SmcStructureSnapshot {
     trend: SmcTrend;
     signal: {
@@ -145,11 +164,19 @@ export interface SmcStructureSnapshot {
     trailingLow: number | null;
     equilibrium: number | null;
     zone: SmcZone;
+    bullishOb: SmcZoneBox | null;
+    bearishOb: SmcZoneBox | null;
+    eqh: SmcEqualLevel | null;
+    eql: SmcEqualLevel | null;
+    liquiditySweep: SmcSweepEvent | null;
+    lastSweep: SmcSweepEvent | null;
 }
 
 export interface SmcPerBarIndicator {
     swing: SmcStructureSnapshot;
     internal: SmcStructureSnapshot;
+    bullishFvg: SmcZoneBox | null;
+    bearishFvg: SmcZoneBox | null;
 }
 
 export interface PerBarIndicators {

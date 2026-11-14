@@ -2,8 +2,9 @@
 
 This playbook defines the exact workflow to follow whenever the user asks for a market-wide stock scan and trade-worthiness brief.
 
-> **Core Strictness Rule**
+> **Core Strictness & Holding Horizon Rules**
 > - **Only recommend stocks with a bullish (rising) $\text{RSI}(14) \le 30$.**
+> - **Typical Holding Horizon:** **1–3 weeks** (swing horizon: `4h` + `1d` establish primary structure, targets, and stops; `1h` + `2h` time exhaustion and entry).
 > - Never relax rules silently to force picks. If `0` stocks satisfy all strict rules, report **0 recommendations** (optionally listing top non-recommended near-misses separately for watchlist tracking).
 > - Never create scheduled automations unless explicitly asked; run scans on demand when prompted.
 
@@ -31,7 +32,7 @@ Run a local pre-screen against TradingView's Scanner API (`https://scanner.tradi
 
 ## Stage 2: Deep Multi-Timeframe Scrape (`imissmyac/trading-view-scraper`)
 
-Run the deployed Apify Actor (`imissmyac/trading-view-scraper`) across **`1h`**, **`2h`**, and **`4h`** (plus **`1d`** on shortlisted candidates for Daily trend/EMA200 context):
+Run the deployed Apify Actor (`imissmyac/trading-view-scraper`) across **`1h`**, **`2h`**, **`4h`**, and **`1d`** (Daily anchor for **1–3 week** swing structure, `EMA200`/`SMA200`, and Daily SMC demand zones):
 
 ```json
 {
@@ -100,14 +101,23 @@ The `trading-view-scraper` Actor computes LuxAlgo-style Smart Money Concepts nat
 3. **Strong / Weak High & Low (Trailing Extremes):**
    - **Bullish Trend (`trend = +1`):** Trailing Low = **Strong Low** (defended structural floor); Trailing High = **Weak High** (upside liquidity target).
    - **Bearish Trend (`trend = -1`):** Trailing High = **Strong High** (defended ceiling); Trailing Low = **Weak Low** (vulnerable liquidity floor likely to be swept/broken).
-4. **Premium / Discount Zones:**
+4. **Order Blocks (`bullishOb` / `bearishOb`) & Fair Value Gaps (`bullishFvg` / `bearishFvg`):**
+   - On each `BOS`/`CHoCH`, the Actor identifies the originating opposing candle (`bullishOb` / `bearishOb`) and tracks unmitigated `3`-candle **Fair Value Gaps (`FVG`)**.
+   - Prefer entries landing inside or right atop an unmitigated **`4h` or `1d` Bullish Order Block** or **Bullish FVG**; flag overhead **`Bearish OB` / `Bearish FVG`** zones as intermediate profit-taking resistance.
+5. **Equal Highs / Lows (`EQH` / `EQL`) & Liquidity Sweeps (`liquiditySweep` / `lastSweep`):**
+   - Consecutive pivots within $0.15\times \text{ATR}(14)$ form `EQH` / `EQL` liquidity pools.
+   - A **Bullish Liquidity Sweep** occurs when a bar's wick pierces below an `EQL`, `Weak Low`, or prior swing low and **closes back above it** (`liquiditySweep.direction === 'bullish'`).
+6. **Premium / Discount Zones:**
    - Compute swing range position `(close - trailingLow) / (trailingHigh - trailingLow)`. Oversold long setups should sit in **Discount (`< 47.5%`)**.
 
-### How SMC Gives Proof of Rise vs Fall
+### How SMC Gives Proof of Rise vs Fall (1–3 Week Swing Framing)
 - **High-Conviction Rise Proof (Long):**
-  - Higher TF (`4h`/`2h`) trend is **`BULL`** pulling back into **Discount** near its **`Strong Low`** (`<= 1.5 ATR`), **OR** `4h`/`2h` swept a `Weak Low` and **`1h` Internal/Swing printed a fresh Bullish `CHoCH`** reclaiming structure with rising volume.
+  - Higher TF (`4h` or `1d`) sits in **Discount** holding near its **`Strong Low`** (`<= 1.5 ATR`) or resting on an unmitigated **`4h`/`1d` Bullish OB / Bullish FVG**, **OR** `1h`/`2h` prints a **Bullish Liquidity Sweep** (`lastSweep.direction === 'bullish'`) below a `Weak Low`/`EQL` followed by a fresh **`1h` Bullish `CHoCH`** reclaiming structure with rising same-hour volume.
 - **High-Risk Fall / Liquidity Sweep Warning (Avoid or Wait):**
-  - All timeframes (`1h/2h/4h`) remain **`BEAR`** after a recent `Bearish BOS`/`CHoCH`, price sits right above an un-swept **`Weak Low`** (`< 1.5 ATR`) with **no bullish `CHoCH`** yet, or bounces directly into a nearby **`Strong High`** (`<= 1.0 ATR`).
+  - `1h`/`2h`/`4h` all remain **`BEAR`** after a recent `Bearish BOS`/`CHoCH`, price sits right above an un-swept **`Weak Low`** or **`EQL`** (`< 1.5 ATR`) with **no Bullish `CHoCH` and no Bullish Liquidity Sweep**, or bounces directly into an overhead **`Strong High` / `Bearish OB` / `Bearish FVG`** (`<= 1.0 ATR`).
+- **1–3 Week Trade Plan Framing:**
+  - **Invalidation / Stop Reference:** Just below the `4h`/`1d` **`Strong Low`**, swept **`Weak Low`**, or **`Bullish OB` bottom** (`-0.5 ATR` buffer).
+  - **Targets & Risk-Reward:** Target 1 = `4h` **`Equilibrium` (`50%`)** / nearest overhead `4h` `Bearish OB` or `Bearish FVG`; Target 2 = `4h`/`1d` **`Weak High`** (`EQH`). Require $\ge 2:1$ R:R for a 1–3 week swing.
 
 ---
 
@@ -118,6 +128,6 @@ For every scan request, present:
 2. **Recommended Picks** *(only strict qualifiers)*, or **Explicit Zero-Match Notice** + optional **Near-Miss Watchlist** (clearly marked **NOT RECOMMENDED — Trigger Conditions Not Met**).
 3. **Per-Ticker Proof Card:**
    - Price, Market Cap, Dollar Volume, Earnings/News risk.
-   - `1h / 2h / 4h` table: `RSI (prev -> curr)`, `MACD & Signal & Hist trend`, `Same-Hour Volume Ratio`, `EMA20/50/200` + `ATR` shock check.
-   - **LuxAlgo SMC Readout (`1h / 2h / 4h`):** Swing & Internal trend, latest **`BOS` / `CHoCH`** level & timestamp, **`Strong/Weak Low`** distance (% & ATR), **`Strong/Weak High`** distance (% & ATR), Premium/Discount zone.
-   - **Verdict:** Clear bullish proof vs bearish invalidation trigger (exact price level where a Weak Low breaks or a Bullish `CHoCH` confirms).
+   - `1h / 2h / 4h / 1d` table: `RSI (prev -> curr)`, `MACD & Signal & Hist trend`, `Same-Hour Volume Ratio`, `EMA20/50/200` + `ATR` shock check.
+   - **LuxAlgo SMC Readout (`1h / 2h / 4h / 1d`):** Swing & Internal trend, latest **`BOS` / `CHoCH`** level & timestamp, **`Strong/Weak Low`** & **`Strong/Weak High`** distance (% & ATR), active **`Bullish/Bearish OB`** & **`FVG`**, **`EQH`/`EQL`**, **`Liquidity Sweep`** status, and `Discount/Premium` zone.
+   - **1–3 Week Verdict & Plan:** Bullish proof vs bearish invalidation level (stop reference, Target 1 equilibrium/OB, Target 2 Weak High, estimated R:R).

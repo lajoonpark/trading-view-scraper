@@ -6,6 +6,7 @@ import {
     computeBollingerBands,
     computeCci,
     computeEma,
+    computeFairValueGaps,
     computeMacd,
     computeObv,
     computeRoc,
@@ -167,10 +168,60 @@ describe('indicators', () => {
         expect(['discount', 'equilibrium', 'premium']).toContain(last.zone);
 
         const perBar = calculatePerBarIndicators(bars, ['SMC'], DEFAULT_PARAMS, true);
-        expect(perBar[perBar.length - 1].smc?.swing).toBeDefined();
-        expect(perBar[perBar.length - 1].smc?.internal).toBeDefined();
+        const lastPerBar = perBar[perBar.length - 1];
+        expect(lastPerBar.atr).toBeUndefined();
+        expect(lastPerBar.smc?.swing).toBeDefined();
+        expect(lastPerBar.smc?.internal).toBeDefined();
 
         const smcSeries = computeSmc(bars, 6, 3);
         expect(smcSeries).toHaveLength(bars.length);
+    });
+
+    it('detects LuxAlgo SMC Order Blocks, FVGs, Equal Lows, and Bullish Liquidity Sweeps', () => {
+        const baseTs = 1_700_000_000;
+        const bar = (idx: number, o: number, h: number, l: number, c: number): OhlcvBar => ({
+            timestamp: baseTs + idx * 3600,
+            datetime: new Date((baseTs + idx * 3600) * 1000).toISOString(),
+            open: o,
+            high: h,
+            low: l,
+            close: c,
+            volume: 1000,
+        });
+
+        // Build clean FVG + Pivot High + Bullish BOS (Order Block) + Equal Lows + Liquidity Sweep bar
+        const bars: OhlcvBar[] = [
+            bar(0, 100, 101, 99, 100.5),
+            bar(1, 100.5, 104, 100, 103.5), // impulse candle -> FVG between idx 0 high (101) and idx 2 low (102)
+            bar(2, 103.5, 106, 102, 105),
+            bar(3, 105, 105.5, 102.5, 103),
+            bar(4, 103, 103.5, 100, 101),
+            bar(5, 101, 102, 100, 101.5), // low ~100 (first pivot low candidate)
+            bar(6, 101.5, 104, 101.2, 103.5),
+            bar(7, 103.5, 107, 103, 106.8), // breaks above pivot high (106) -> bullish BOS + bullish OB near 100
+            bar(8, 106.8, 107.2, 102.5, 102.8),
+            bar(9, 102.8, 102.9, 100.05, 101.2), // second pivot low ~100.05 -> forms EQL with idx 5
+            bar(10, 101.2, 103.2, 100.5, 102.5),
+            bar(11, 102.5, 103.2, 100.8, 102.8),
+            bar(12, 102.8, 103.5, 101.1, 102.9),
+            bar(13, 102.9, 103.2, 99.6, 102.2), // sweeps below EQL (~100) and closes back above -> bullish sweep
+        ];
+
+        const fvg = computeFairValueGaps(bars);
+        expect(fvg.bullishFvg[2]).toEqual({
+            top: 102,
+            bottom: 101,
+            datetime: bars[1].datetime,
+        });
+
+        const smc = computeSmcStructure(bars, 2);
+        // Bullish OB created when idx 7 closed > 106
+        expect(smc[7].bullishOb).not.toBeNull();
+        expect(smc[7].bullishOb?.bottom).toBe(100);
+        // EQL detected by idx 11/12, swept with bullish reclaim on idx 13
+        expect(smc[12].eql?.kind).toBe('EQL');
+        expect(smc[13].liquiditySweep?.direction).toBe('bullish');
+        expect(smc[13].liquiditySweep?.kind).toBe('EQL');
+        expect(smc[13].lastSweep?.direction).toBe('bullish');
     });
 });

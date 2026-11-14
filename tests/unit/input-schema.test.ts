@@ -26,6 +26,24 @@ describe('input-schema', () => {
         ).toThrow(/macdFast/);
     });
 
+    it('supports SMC indicator and validates smcInternalLength < smcSwingLength', () => {
+        const valid = parseActorInput({
+            symbols: ['AAPL'],
+            indicators: ['RSI', 'SMC'],
+        });
+        expect(valid.indicators).toEqual(['RSI', 'SMC']);
+        expect(valid.indicatorParams.smcSwingLength).toBe(20);
+        expect(valid.indicatorParams.smcInternalLength).toBe(5);
+
+        expect(() =>
+            parseActorInput({
+                symbols: ['AAPL'],
+                indicators: ['SMC'],
+                indicatorParams: { smcInternalLength: 20, smcSwingLength: 20 },
+            }),
+        ).toThrow(/smcInternalLength/);
+    });
+
     it('rejects invalid date range', () => {
         expect(() =>
             parseActorInput({

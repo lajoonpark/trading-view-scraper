@@ -78,7 +78,7 @@
         "indicators": {
             "title": "Per-Bar Technical Indicators",
             "type": "array",
-            "description": "Technical indicators to compute and attach to every historical OHLCV bar. Allowed values: RSI, MACD, EMA, SMA, BB, STOCH, ATR, ADX, VWAP, OBV, CCI, ROC.",
+            "description": "Technical indicators to compute and attach to every historical OHLCV bar. Allowed values: RSI, MACD, EMA, SMA, BB, STOCH, ATR, ADX, VWAP, OBV, CCI, ROC, SMC.",
             "editor": "stringList",
             "default": [
                 "RSI",
@@ -115,7 +115,9 @@
                 "atrPeriod": 14,
                 "adxPeriod": 14,
                 "cciPeriod": 20,
-                "rocPeriod": 9
+                "rocPeriod": 9,
+                "smcSwingLength": 20,
+                "smcInternalLength": 5
             }
         },
         "includeHistoricalBars": {

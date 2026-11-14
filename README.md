@@ -33,6 +33,7 @@ Pass any subset in `indicators`:
 - `OBV` (On-Balance Volume)
 - `CCI` (Commodity Channel Index, default: `20`)
 - `ROC` (Rate of Change, default: `9`)
+- `SMC` (LuxAlgo-style Smart Money Concepts, default `smcSwingLength: 20`, `smcInternalLength: 5` — returns `swing` & `internal` `trend`, `signal`/`lastBreak` `BOS`/`CHoCH`, `strongHigh`/`weakHigh`, `strongLow`/`weakLow`, `equilibrium`, and `zone`)
 
 ## Example Input
 

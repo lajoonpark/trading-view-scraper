@@ -11,6 +11,8 @@ import {
     computeRoc,
     computeRsi,
     computeSma,
+    computeSmc,
+    computeSmcStructure,
     computeStochastic,
     computeVwap,
 } from '../../src/indicators.js';
@@ -48,6 +50,8 @@ const DEFAULT_PARAMS: IndicatorParams = {
     adxPeriod: 5,
     cciPeriod: 5,
     rocPeriod: 3,
+    smcSwingLength: 10,
+    smcInternalLength: 3,
 };
 
 describe('indicators', () => {
@@ -138,5 +142,35 @@ describe('indicators', () => {
         expect(last.ema).toBeUndefined();
         expect(last.sma).toBeUndefined();
         expect(last.bb).toBeUndefined();
+    });
+
+    it('computes LuxAlgo SMC BOS, CHoCH, Strong/Weak levels, and zones', () => {
+        // Construct a clean wave: rally -> pivot high -> pullback -> bullish break (BOS/CHoCH) -> breakdown below pivot low (CHoCH)
+        const pattern = [
+            100, 102, 105, 108, 106, 103, 101, 99, // pivot high ~109.5 at idx 3
+            102, 106, 111, 113, 112, 109, 105, 100, 96, // breaks above 109.5 -> bullish BOS, then pivot low around 94.5
+            98, 95, 92, 90, 94, 99, 104, 108, // breaks below pivot low -> bearish CHoCH
+        ];
+        const bars = makeBars(pattern, true);
+        const structure = computeSmcStructure(bars, 3);
+
+        const signals = structure.map((s) => s.signal).filter((s) => s !== null);
+        expect(signals.some((s) => s!.direction === 'bullish')).toBe(true);
+        expect(signals.some((s) => s!.tag === 'CHoCH' && s!.direction === 'bearish')).toBe(true);
+
+        const last = structure[structure.length - 1];
+        expect(last.trend).toBe('bearish');
+        expect(last.strongHigh).not.toBeNull();
+        expect(last.weakLow).not.toBeNull();
+        expect(last.weakHigh).toBeNull();
+        expect(last.strongLow).toBeNull();
+        expect(['discount', 'equilibrium', 'premium']).toContain(last.zone);
+
+        const perBar = calculatePerBarIndicators(bars, ['SMC'], DEFAULT_PARAMS, true);
+        expect(perBar[perBar.length - 1].smc?.swing).toBeDefined();
+        expect(perBar[perBar.length - 1].smc?.internal).toBeDefined();
+
+        const smcSeries = computeSmc(bars, 6, 3);
+        expect(smcSeries).toHaveLength(bars.length);
     });
 });

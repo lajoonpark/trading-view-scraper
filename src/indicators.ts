@@ -3,6 +3,12 @@ import type {
     IndicatorParams,
     OhlcvBar,
     PerBarIndicators,
+    SmcBreakTag,
+    SmcPerBarIndicator,
+    SmcStructureEvent,
+    SmcStructureSnapshot,
+    SmcTrend,
+    SmcZone,
 } from './types.js';
 
 function roundValue(value: number | null, decimals = 6): number | null {
@@ -352,6 +358,154 @@ export function computeRoc(closes: number[], period: number): (number | null)[] 
     return out;
 }
 
+interface SmcPivot {
+    level: number;
+    datetime: string;
+    crossed: boolean;
+}
+
+function classifySmcZone(close: number, low: number, high: number): SmcZone {
+    const range = high - low;
+    if (!Number.isFinite(range) || range <= 0) return 'neutral';
+    const pos = (close - low) / range;
+    if (pos < 0.475) return 'discount';
+    if (pos > 0.525) return 'premium';
+    return 'equilibrium';
+}
+
+/**
+ * Compute LuxAlgo-style Smart Money Concepts structure (leg pivots, BOS/CHoCH,
+ * Strong/Weak High & Low trailing extremes, and Premium/Discount zones) for a given lookback size.
+ */
+export function computeSmcStructure(bars: OhlcvBar[], size: number): SmcStructureSnapshot[] {
+    const out: SmcStructureSnapshot[] = new Array(bars.length);
+    if (bars.length === 0) return out;
+
+    let leg: 0 | 1 = 0; // 0 = bearish leg (swing high), 1 = bullish leg (swing low)
+    let trendNum: -1 | 0 | 1 = 0;
+    let lastHigh: SmcPivot | null = null;
+    let lastLow: SmcPivot | null = null;
+    let lastBreak: SmcStructureEvent | null = null;
+    let trailingTop = bars[0].high;
+    let trailingBottom = bars[0].low;
+
+    for (let i = 0; i < bars.length; i++) {
+        const bar = bars[i];
+        if (bar.high > trailingTop) trailingTop = bar.high;
+        if (bar.low < trailingBottom) trailingBottom = bar.low;
+
+        if (size > 0 && i >= size) {
+            const candIdx = i - size;
+            const cand = bars[candIdx];
+            let maxFollowingHigh = -Infinity;
+            let minFollowingLow = Infinity;
+            for (let j = candIdx + 1; j <= i; j++) {
+                if (bars[j].high > maxFollowingHigh) maxFollowingHigh = bars[j].high;
+                if (bars[j].low < minFollowingLow) minFollowingLow = bars[j].low;
+            }
+
+            let newLeg: 0 | 1 = leg;
+            if (cand.high > maxFollowingHigh) {
+                newLeg = 0;
+            } else if (cand.low < minFollowingLow) {
+                newLeg = 1;
+            }
+
+            if (newLeg !== leg) {
+                leg = newLeg;
+                if (leg === 1) {
+                    lastLow = { level: cand.low, datetime: cand.datetime, crossed: false };
+                    trailingBottom = cand.low;
+                    let localTop = cand.high;
+                    for (let j = candIdx + 1; j <= i; j++) {
+                        if (bars[j].high > localTop) localTop = bars[j].high;
+                        if (bars[j].low < trailingBottom) trailingBottom = bars[j].low;
+                    }
+                    trailingTop = localTop;
+                } else {
+                    lastHigh = { level: cand.high, datetime: cand.datetime, crossed: false };
+                    trailingTop = cand.high;
+                    let localBot = cand.low;
+                    for (let j = candIdx + 1; j <= i; j++) {
+                        if (bars[j].low < localBot) localBot = bars[j].low;
+                        if (bars[j].high > trailingTop) trailingTop = bars[j].high;
+                    }
+                    trailingBottom = localBot;
+                }
+            }
+        }
+
+        let barSignal: { tag: SmcBreakTag; direction: 'bullish' | 'bearish'; level: number } | null = null;
+
+        if (lastHigh && !lastHigh.crossed && bar.close > lastHigh.level) {
+            const tag: SmcBreakTag = trendNum === -1 ? 'CHoCH' : 'BOS';
+            trendNum = 1;
+            lastHigh.crossed = true;
+            const level = roundValue(lastHigh.level, 6) ?? lastHigh.level;
+            barSignal = { tag, direction: 'bullish', level };
+            lastBreak = {
+                tag,
+                direction: 'bullish',
+                level,
+                pivotDatetime: lastHigh.datetime,
+                breakDatetime: bar.datetime,
+            };
+        }
+
+        if (lastLow && !lastLow.crossed && bar.close < lastLow.level) {
+            const tag: SmcBreakTag = trendNum === 1 ? 'CHoCH' : 'BOS';
+            trendNum = -1;
+            lastLow.crossed = true;
+            const level = roundValue(lastLow.level, 6) ?? lastLow.level;
+            barSignal = { tag, direction: 'bearish', level };
+            lastBreak = {
+                tag,
+                direction: 'bearish',
+                level,
+                pivotDatetime: lastLow.datetime,
+                breakDatetime: bar.datetime,
+            };
+        }
+
+        const trend: SmcTrend = trendNum === 1 ? 'bullish' : trendNum === -1 ? 'bearish' : 'neutral';
+        const roundedHigh = roundValue(trailingTop, 6);
+        const roundedLow = roundValue(trailingBottom, 6);
+        const equilibrium = roundValue((trailingTop + trailingBottom) / 2, 6);
+
+        out[i] = {
+            trend,
+            signal: barSignal,
+            lastBreak,
+            strongHigh: trend === 'bearish' ? roundedHigh : null,
+            weakHigh: trend === 'bullish' ? roundedHigh : null,
+            strongLow: trend === 'bullish' ? roundedLow : null,
+            weakLow: trend === 'bearish' ? roundedLow : null,
+            trailingHigh: roundedHigh,
+            trailingLow: roundedLow,
+            equilibrium,
+            zone: classifySmcZone(bar.close, trailingBottom, trailingTop),
+        };
+    }
+
+    return out;
+}
+
+/**
+ * Compute dual-horizon LuxAlgo SMC indicators (`swing` and `internal`) per bar.
+ */
+export function computeSmc(
+    bars: OhlcvBar[],
+    swingLength: number,
+    internalLength: number,
+): SmcPerBarIndicator[] {
+    const swing = computeSmcStructure(bars, swingLength);
+    const internal = computeSmcStructure(bars, internalLength);
+    return bars.map((_, i) => ({
+        swing: swing[i],
+        internal: internal[i],
+    }));
+}
+
 export function calculatePerBarIndicators(
     bars: OhlcvBar[],
     enabledIndicators: IndicatorName[],
@@ -383,6 +537,9 @@ export function calculatePerBarIndicators(
     const obv = enabled.has('OBV') ? computeObv(bars) : null;
     const cci = enabled.has('CCI') ? computeCci(bars, params.cciPeriod) : null;
     const roc = enabled.has('ROC') ? computeRoc(closes, params.rocPeriod) : null;
+    const smc = enabled.has('SMC')
+        ? computeSmc(bars, params.smcSwingLength, params.smcInternalLength)
+        : null;
 
     return bars.map((_, i) => {
         const entry: PerBarIndicators = {};
@@ -429,6 +586,7 @@ export function calculatePerBarIndicators(
         if (obv) entry.obv = roundValue(obv[i], 2);
         if (cci) entry.cci = roundValue(cci[i], 4);
         if (roc) entry.roc = roundValue(roc[i], 4);
+        if (smc) entry.smc = smc[i];
         return entry;
     });
 }
@@ -465,6 +623,9 @@ export function getRequiredWarmupBars(
     }
     if (enabled.has('STOCH')) {
         maxWarmup = Math.max(maxWarmup, params.stochK + params.stochSmoothK + params.stochD + 10);
+    }
+    if (enabled.has('SMC')) {
+        maxWarmup = Math.max(maxWarmup, Math.max(params.smcSwingLength, params.smcInternalLength) * 4 + 30);
     }
     return Math.min(maxWarmup, 400);
 }

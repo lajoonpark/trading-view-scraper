@@ -29,6 +29,7 @@ const indicatorEnum = z.enum([
     'OBV',
     'CCI',
     'ROC',
+    'SMC',
 ]);
 
 const intervalEnum = z.enum([
@@ -76,6 +77,8 @@ const indicatorParamsSchema = z
         adxPeriod: z.number().int().min(2).max(200).default(14),
         cciPeriod: z.number().int().min(2).max(200).default(20),
         rocPeriod: z.number().int().min(1).max(200).default(9),
+        smcSwingLength: z.number().int().min(3).max(200).default(20),
+        smcInternalLength: z.number().int().min(2).max(50).default(5),
     })
     .default({});
 
@@ -122,6 +125,12 @@ export function parseActorInput(rawInput: unknown): ActorInput {
     if (parsed.indicatorParams.macdFast >= parsed.indicatorParams.macdSlow) {
         throw new Error(
             `indicatorParams.macdFast (${parsed.indicatorParams.macdFast}) must be less than indicatorParams.macdSlow (${parsed.indicatorParams.macdSlow}).`,
+        );
+    }
+
+    if (parsed.indicatorParams.smcInternalLength >= parsed.indicatorParams.smcSwingLength) {
+        throw new Error(
+            `indicatorParams.smcInternalLength (${parsed.indicatorParams.smcInternalLength}) must be less than indicatorParams.smcSwingLength (${parsed.indicatorParams.smcSwingLength}).`,
         );
     }
 

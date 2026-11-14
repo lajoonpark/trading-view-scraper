@@ -37,7 +37,8 @@ export type IndicatorName =
     | 'VWAP'
     | 'OBV'
     | 'CCI'
-    | 'ROC';
+    | 'ROC'
+    | 'SMC';
 
 export type SearchAssetType =
     | 'stock'
@@ -67,6 +68,8 @@ export interface IndicatorParams {
     adxPeriod: number;
     cciPeriod: number;
     rocPeriod: number;
+    smcSwingLength: number;
+    smcInternalLength: number;
 }
 
 export interface ActorInput {
@@ -114,6 +117,41 @@ export interface OhlcvBar {
     volume: number;
 }
 
+export type SmcTrend = 'bullish' | 'bearish' | 'neutral';
+export type SmcBreakTag = 'BOS' | 'CHoCH';
+export type SmcZone = 'discount' | 'equilibrium' | 'premium' | 'neutral';
+
+export interface SmcStructureEvent {
+    tag: SmcBreakTag;
+    direction: 'bullish' | 'bearish';
+    level: number;
+    pivotDatetime: string;
+    breakDatetime: string;
+}
+
+export interface SmcStructureSnapshot {
+    trend: SmcTrend;
+    signal: {
+        tag: SmcBreakTag;
+        direction: 'bullish' | 'bearish';
+        level: number;
+    } | null;
+    lastBreak: SmcStructureEvent | null;
+    strongHigh: number | null;
+    weakHigh: number | null;
+    strongLow: number | null;
+    weakLow: number | null;
+    trailingHigh: number | null;
+    trailingLow: number | null;
+    equilibrium: number | null;
+    zone: SmcZone;
+}
+
+export interface SmcPerBarIndicator {
+    swing: SmcStructureSnapshot;
+    internal: SmcStructureSnapshot;
+}
+
 export interface PerBarIndicators {
     rsi?: number | null;
     macd?: {
@@ -142,6 +180,7 @@ export interface PerBarIndicators {
     obv?: number | null;
     cci?: number | null;
     roc?: number | null;
+    smc?: SmcPerBarIndicator;
 }
 
 export interface EnrichedOhlcvBar extends OhlcvBar {

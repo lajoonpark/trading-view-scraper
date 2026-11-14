@@ -14,7 +14,7 @@ RUN npm --quiet set progress=false \
     && npm install --omit=dev --omit=optional --audit=false \
     && rm -rf ~/.npm
 
-COPY --chown=myuser:myuser --from=builder /home/myuser/dist ./dist
+COPY --chown=myuser:myuser --from=builder /usr/src/app/dist ./dist
 COPY --chown=myuser:myuser .actor ./.actor
 
 CMD ["node", "dist/main.js"]

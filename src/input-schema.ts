@@ -99,7 +99,7 @@ export const actorInputSchema = z.object({
     preferredExchanges: z.array(z.string().trim().min(1)).default([...DEFAULT_PREFERRED_EXCHANGES]),
     session: z.enum(['regular', 'extended']).default('regular'),
     adjustment: z.enum(['splits', 'dividends']).default('splits'),
-    maxConcurrency: z.number().int().min(1).max(15).default(5),
+    maxConcurrency: z.number().int().min(1).max(15).default(15),
     requestTimeoutMs: z.number().int().min(3000).max(120000).default(25000),
     proxyConfiguration: z
         .object({

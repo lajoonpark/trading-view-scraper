@@ -5,6 +5,8 @@
     "description": "Scrape targeted TradingView stocks/tickers with zero noise, historical OHLCV price bars across chosen intervals (1m, 5m, 15m, 1h, 4h, 1d, 1w, 1M), and technical indicators (MACD, RSI, EMA, SMA, Bollinger Bands, Stochastic, ADX, ATR, VWAP, OBV, CCI, ROC).",
     "version": "1.0",
     "buildTag": "latest",
+    "minMemoryMbytes": 256,
+    "defaultMemoryMbytes": 256,
     "dockerfile": "../Dockerfile",
     "input": "./input_schema.json",
     "output": "./output_schema.json",

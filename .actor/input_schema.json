@@ -196,7 +196,7 @@
             "title": "Max Concurrency",
             "type": "integer",
             "description": "Maximum number of symbols scraped concurrently.",
-            "default": 5,
+            "default": 15,
             "minimum": 1,
             "maximum": 15
         },
